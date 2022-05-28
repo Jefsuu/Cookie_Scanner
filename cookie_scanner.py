@@ -181,6 +181,7 @@ def captura_cookies(link):
 
         return c
     except:
+        #escrevendo os links que não puderam ser acessados
         with open('temp_links.txt', 'a') as temFile:
             temFile.write(f"\n{link}")
     
@@ -274,11 +275,12 @@ def scan_cookies(site):
 
     multiprocess = [i for i in multiprocess if (type(i) != type(None)) and (len(i)>0) and (i != None)]
 
-    try:
+    #escrevendo os links do multiprocess em um txt
+    """try:
         with open('multprocess.txt', 'a') as processFile:
             processFile.write(multiprocess)
     except:
-        None
+        None"""
 
     #adcionando os resultados do processamento paralelo na lista de cookies
     for cookie in chain.from_iterable(multiprocess):
@@ -342,3 +344,6 @@ def scan_cookies(site):
     df = df.fillna('').replace('Nan', '').replace('Nan.', '')
     #df.to_excel(f'{nameFile}.xlsx', index=False)
     return df
+
+#importante chamar a função passando o schema(https ou http) no link 
+scan_cookies('https://www.site.com')
