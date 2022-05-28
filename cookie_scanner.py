@@ -16,7 +16,7 @@ import requests
 #biblioteca que permite multiprocessamento
 from joblib import Parallel, delayed
 from itertools import chain
-#configurando para que o webdriver seja executado em modo invisivel e outras definições
+#configurando para que o webdriver seja executado em modo invisivel
 options = webdriver.ChromeOptions()
 options.add_argument("start-maximized")
 options.add_argument("enable-automation")
@@ -28,7 +28,6 @@ options.add_argument("--disable-extensions")
 options.add_argument("--disable-browser-side-navigation")
 options.add_argument("--no-sandbox")
 options.add_argument("--dns-prefetch-disable")
-#configurando para que o navegador não execute downloads
 prefs = {
     "download_restrictions": 3,
 }
@@ -148,36 +147,47 @@ def calcula_exp(t):
             None
     #se tudo der errado, a função simplemente retorna a data de expiração da mesma forma que o navegador retorna
     except:
-        return t
+        try:
+            dt = time.strftime(r'%d/%m/%Y %H:%M:%S', time.localtime(t))
+            return dt
+        except:
+            return t
         
-
 #função para capturar os cookies dos links, essa função será usada para o multiprocessamento
 def captura_cookies(link):
-    #iniciando uma lista onde os cookies serão armazenados
-    c = []
     #abre um novo webdriver que herda as option estabelecidas anteriormente
+    c = []
     nav = webdriver.Chrome(options=options)
     #entra no link
-    nav.get(link)
-    #pega cada cookie
-    for a in nav.get_cookies():
-        #procura a chave 'expiry' no dict do cookie e se encontrar, pega esse valor e envia para a função que calcula a diferença
-        # e cria uma nova chave 'Retention' onde será armazenado o tempo de retenção desse cookie
-        if a.get('expiry'):
-            a['Retention'] = calcula_exp(a['expiry'])
-        else:
-            a['expiry'] = None
-            a['Retention'] = None
-        #adiciona o cookie na lista de cookies da função scan_cookies
-        c.append(a)
-    #sai do navegador
-    nav.quit()
-    #retornando a lista de cookies
-    return c
+    print(f'\n\nAcessando: {link}...')
+    try:
+        nav.get(link)
+        #pega cada cookie
+        for a in nav.get_cookies():
+            
+            #procura a chave 'expiry' no dict do cookie e se encontrar, pega esse valor e envia para a função que calcula a diferença
+            # e cria uma nova chave 'Retention' onde será armazenado o tempo de retenção desse cookie
+            if a.get('expiry'):
+                a['Retention'] = calcula_exp(a['expiry'])
+            else:
+                a['expiry'] = None
+                a['Retention'] = None
+            #adiciona o cookie na lista de cookies da função scan_cookies
+            c.append(a)
+            with open('cookies.json', 'a') as cookieJson:
+                cookieJson.write(f"\n{a}")
+        #sai do navegador
+        nav.quit()
+
+        return c
+    except:
+        with open('temp_links.txt', 'a') as temFile:
+            temFile.write(f"\n{link}")
+    
 
 def scan_cookies(site):
-    #iniciando tradutor, para traduzir a descrição do cookie, quando houver
     translator = Translator()
+    
     #extraindo o dominio do site e scheme do site
     domain = urlparse(site).netloc
     scheme = urlparse(site).scheme
@@ -194,30 +204,36 @@ def scan_cookies(site):
             i['expiry'] = None
             i['Retention'] = None
         cookies.append(i)
+        with open('cookies.json', 'a') as cookieJson:
+                cookieJson.write(f"\n{i}")
 
     #pegando todos os links da pagina principal
     links = [i.get_attribute('href') for i in driver.find_elements(By.TAG_NAME, 'a')]
     #retirando os links invalidos e os links com extensão de arquivos, para evitar acessar links de download
     links = [i for i in links if (i != None) and (i != '') and (scheme in i) and (i.endswith('pdf') == False) and (i.endswith('jpg') == False) \
         and (i.endswith('odt') == False) and (i.endswith('png') == False) and (i.endswith('xlsx') == False) and (i.endswith('docx') == False) \
-            and (i.endswith('pptx') == False) and (i.endswith('txt') == False)]
+            and (i.endswith('pptx') == False) and (i.endswith('txt') == False) and ('editais' not in i)]
 
     #acessando os links da lista e se o link for do mesmo dominio do site, pega todo os links desse link. Se o dominio for diferente, 
     #adiciona o link em uma lista diferente que depois irá ser anexada a lista de links
     url = []
     links_externos = []
     for i in links:
-        driver.get(i)
-        if urlparse(i).netloc == domain:
-            url.append([x.get_attribute('href') for x in driver.find_elements(By.TAG_NAME, 'a')])
-        else:
-            """for a in driver.get_cookies():
-                if a.get('expiry'):
-                    a['Retention'] = calcula_exp(a['expiry'])
-                else:
-                    a['expiry'] = None
-                cookies.append(a)"""
-            links_externos.append(i)
+        try:
+            driver.get(i)
+            if urlparse(i).netloc == domain:
+                url.append([x.get_attribute('href') for x in driver.find_elements(By.TAG_NAME, 'a')])
+            else:
+                """for a in driver.get_cookies():
+                    if a.get('expiry'):
+                        a['Retention'] = calcula_exp(a['expiry'])
+                    else:
+                        a['expiry'] = None
+                    cookies.append(a)"""
+                links_externos.append(i)
+        except:
+            with open('temp_links.txt', 'a') as temFile:
+                temFile.write(f"\n{i}")
 
     #como todos os links ja foram coletados, fecha o navegador
     driver.quit()
@@ -229,9 +245,12 @@ def scan_cookies(site):
     #retirando os links invalidos e os links com extensão de arquivos, para evitar acessar links de download
     links = [i for i in links if (i != None) and (i != '') and (scheme in i) and (i.endswith('pdf') == False) and (i.endswith('jpg') == False) \
         and (i.endswith('odt') == False) and (i.endswith('png') == False) and (i.endswith('xlsx') == False) and (i.endswith('docx') == False) \
-            and (i.endswith('pptx') == False) and (i.endswith('txt') == False)]
+            and (i.endswith('pptx') == False) and (i.endswith('txt') == False) and ('editais' not in i)]
     #removendo links duplicados
     links = list(set(links))
+
+    print(f"Quantidade de links: {len(links)}")
+    print(f"\nTempo estimado: {(15 * len(links))/240} Minutos")
 
     #entrando em cada link e coletando os cookies e armazenando cada um na lista [cookies]
     """for x in links:
@@ -250,7 +269,16 @@ def scan_cookies(site):
     #se houverem 4 nucloes, ela pega 4 links da lista e atribui um para cada função que esta sendo executada
     #o verbose > 10 indica que todas mensagens geradas devem ser apresentadas, para retirar basta tirar o parametro ou colocar =0
     #verificar documentação da biblioteca para mais esclarecimentos https://joblib.readthedocs.io/en/latest/parallel.html
+
     multiprocess = Parallel(n_jobs=-1, backend='loky', verbose=11)(delayed(captura_cookies)(i) for i in links)
+
+    multiprocess = [i for i in multiprocess if (type(i) != type(None)) and (len(i)>0) and (i != None)]
+
+    try:
+        with open('multprocess.txt', 'a') as processFile:
+            processFile.write(multiprocess)
+    except:
+        None
 
     #adcionando os resultados do processamento paralelo na lista de cookies
     for cookie in chain.from_iterable(multiprocess):
@@ -258,7 +286,7 @@ def scan_cookies(site):
     
 
     #limpando o link do site para gerar um nome para o arquivo de saida
-    nameFile = domain.split('.com')[0]
+    nameFile = domain.replace('www.', '').replace('https://', '').replace('http://', '').split('.com')[0]
     #nameFile = site.replace(".", "").replace(":", "").replace("/", "")
     #path = os.path.dirname(os.path.abspath(__file__)) + '/temp'
 
@@ -272,7 +300,7 @@ def scan_cookies(site):
     #definindo se o cookie é first-party ou third-party de acordo com o dominio
     cookie_type = []
     for d in df.domain:
-        if domain in d:
+        if (domain in d) and (d in domain):
             cookie_type.append('First-party')
         else:
             cookie_type.append('Third-party')
@@ -294,14 +322,23 @@ def scan_cookies(site):
     df['Retention'] = df['Retention'].fillna('Session')
     #traduzindo a descrição do cookie, usando a api do google
     df['Descrição'] = [translator.translate(text=i, src='en', dest='pt').text for i in df['Description'].to_list()]
+    
+    ponto = []
+    for i in df['Descrição'].to_list():
+        if len(i)>0:
+            if i[-1] != '.':
+                i = i + '.'
+                ponto.append(i)
+            else:
+                ponto.append(i)
+        else:
+                ponto.append(i)
+    
+    df['Descrição'] = ponto
 
     #Definindo quais colunas serão utilizadas
-    df = df[['name', 'domain', 'Cookie type','Retention','Expiration','Category','Descrição', 'Description', 'Data Controller', 'User Privacy & GDPR Rights Portals']]
+    df = df[['name', 'domain', 'Cookie type','Retention','Expiration','Category','Descrição', 'Data Controller', 'User Privacy & GDPR Rights Portals']]
     #Limpando valores invalidos restantes
-    df = df.fillna('').replace('Nan', '')
-
-    #salvando o arquivo como json
-    df.to_json(f'{nameFile}.json', orient='records')
-
-#chamando a função e passando o site, é importante passar o site no formato https://site.com
-scan_cookies('https://site.com')
+    df = df.fillna('').replace('Nan', '').replace('Nan.', '')
+    #df.to_excel(f'{nameFile}.xlsx', index=False)
+    return df
